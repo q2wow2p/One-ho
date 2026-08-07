@@ -143,4 +143,4 @@ async def purge_range(interaction: discord.Interaction, 시작_메시지_링크:
             await interaction.followup.send(f"❌ 삭제 중 오류가 발생했습니다: {e}", ephemeral=True)
 
 # 토큰을 코드에 직접 적지 않고, Koyeb의 환경 변수(BOT_TOKEN)에서 가져옵니다.
-bot.run(os.environ.get("BOTTOKEN"))
+bot.run(os.environ.get("BOT_TOKEN"))
