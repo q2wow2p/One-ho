@@ -62,7 +62,7 @@ RAW_PATTERNS = [
 ]
 
 COMPILED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in RAW_PATTERNS]
-BAD_WORDS = ["느금", "엠창", "떵개", "꺼져", "ㅅㅂ", "ㅆㅂ", "ㄴㄱㅁ", "ㅂㅅ", "ㄱㅅㄲ", "ㅈㄹ"]
+BAD_WORDS = ["시불", "느금", "엠창", "떵개", "꺼져", "ㅅㅂ", "ㅆㅂ", "ㄴㄱㅁ", "ㅂㅅ", "ㄱㅅㄲ", "ㅈㄹ"]
 
 def is_bad_word(text: str) -> bool:
     clean_text = text.replace(" ", "").replace("_", "").replace("-", "").replace("~", "").replace(".", "").replace(",", "").lower()
