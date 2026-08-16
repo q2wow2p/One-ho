@@ -81,9 +81,9 @@ def is_bad_word(text: str) -> bool:
     return False
 
 # ---------------------------------------------------------
-# [유저별 일정 간격 도배 감지용 저장소]
+# [유저별 도배/스팸 감지용 저장소]
 # ---------------------------------------------------------
-user_interval_records = {}
+user_spam_records = {}
 
 @bot.event
 async def on_ready():
@@ -110,7 +110,7 @@ async def check_and_clean_nickname(member: discord.Member):
                 pass
 
         except discord.Forbidden:
-            print(f"❌ {member.display_name}님의 닉네임을 변경할 권한이 없습니다. (봇 역할 순위 확인 필요)")
+            print(f"❌ {member.display_name}님의 닉네임을 변경할 권한이 없습니다.")
 
 @bot.event
 async def on_member_join(member: discord.Member):
@@ -134,14 +134,14 @@ async def on_message(message):
         )
         return
 
-    # 2. 일정한 간격(매크로) 도배 감지 처리
+    # 2. 도배 및 스팸 감지 (매크로 일정 간격 + 불규칙 의도적 도배 동시 차단)
     author_id = message.author.id
     current_time = time.time()
 
-    if author_id not in user_interval_records:
-        user_interval_records[author_id] = {"timestamps": [], "messages": []}
+    if author_id not in user_spam_records:
+        user_spam_records[author_id] = {"timestamps": [], "messages": []}
 
-    record = user_interval_records[author_id]
+    record = user_spam_records[author_id]
     record["timestamps"].append(current_time)
     record["messages"].append(message.content)
 
@@ -150,30 +150,31 @@ async def on_message(message):
         record["timestamps"].pop(0)
         record["messages"].pop(0)
 
-    # 기록이 정확히 10개 쌓였을 때 간격 분석
+    # 기록이 10개 쌓였을 때 검사
     if len(record["timestamps"]) == 10:
-        # 각 메시지 사이의 시간 간격 계산 (예: 9개의 간격)
         intervals = [record["timestamps"][i] - record["timestamps"][i-1] for i in range(1, 10)]
-        
-        # 첫 번째 간격을 기준으로 잡고, 나머지 간격들이 모두 기준과 오차 범위(±0.6초 이내)로 일정한지 확인
         base_interval = intervals[0]
         
-        # 너무 빠른 간격(예: 0.3초 미만)이거나 너무 느린 간격(30초 초과)은 제외하고 규칙적인 패턴만 검사
-        is_regular = all(abs(interval - base_interval) <= 0.6 for interval in intervals) and (0.5 <= base_interval <= 30.0)
+        # [조건 1] 메트로놈처럼 일정한 간격으로 10번 보낸 경우 (매크로 도배)
+        is_regular_macro = all(abs(interval - base_interval) <= 0.6 for interval in intervals) and (0.5 <= base_interval <= 30.0)
         
-        # 추가로 동일 내용 반복 조건까지 겹치거나, 완벽하게 일정한 타이밍일 때
+        # [조건 2] 간격이 불규칙하더라도, 최근 10개의 메시지가 총 15초 이내라는 짧은 시간 동안 난사된 경우 (의도적 도배)
+        total_duration = record["timestamps"][-1] - record["timestamps"][0]
+        is_fast_spam = total_duration <= 15.0 
+
+        # [조건 3] 10개가 전부 똑같은 내용인 경우
         all_same_content = all(msg == record["messages"][0] for msg in record["messages"])
 
-        if is_regular or all_same_content:
+        if is_regular_macro or is_fast_spam or all_same_content:
             try:
                 from datetime import timedelta
-                await message.author.timeout(timedelta(minutes=5), reason="일정한 간격의 매크로 도배 자동 감지")
+                await message.author.timeout(timedelta(minutes=5), reason="도배 및 스팸 행위 자동 감지")
                 
                 # 기록 초기화
-                user_interval_records[author_id] = {"timestamps": [], "messages": []}
+                user_spam_records[author_id] = {"timestamps": [], "messages": []}
                 
                 await message.channel.send(
-                    f"🚫 {message.author.mention}님, 일정한 간격의 도배(매크로) 행위가 감지되어 **5분간 타임아웃**되었습니다."
+                    f"🚫 {message.author.mention}님, 의도적인 도배 또는 매크로 행위가 감지되어 **5분간 타임아웃**되었습니다."
                 )
                 try:
                     await message.delete()
