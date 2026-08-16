@@ -37,11 +37,11 @@ class MyBot(commands.Bot):
 bot = MyBot()
 
 # ---------------------------------------------------------
-# [정밀 패드립 & 비속어 정규식 패턴]
+# [정밀 패드립 & 비속어 정규식 패턴 (확장형)]
 # ---------------------------------------------------------
 PARENT_WORDS = r"(니|네|느|너희|너네|애)[^\w\s]{0,3}(엄마|어머니|아빠|아버지|애미|애비|금마|엠|금)"
 PARENT_DIRECT = r"(엄마|어머니|아빠|아버지|애미|애비)"
-MOCK_WORDS = r"(뒤진|없|창녀|창놈|레전드|클라스|안계시|뒈진|보지|자지|병신|디진|터짐|터진|갈림|뒈짐)"
+MOCK_WORDS = r"(뒤진|없|창녀|창놈|레전드|클라스|안계시|뒈진|보지|자지|병신|디진|터짐|터진|갈림|뒈진)"
 
 RAW_PATTERNS = [
     r"느[^\w\s]{0,3}금",
@@ -50,7 +50,8 @@ RAW_PATTERNS = [
     rf"{MOCK_WORDS}[^\w\s]{{0,5}}{PARENT_DIRECT}",
     r"ㄴ[^\w\s]{0,3}ㄱ[^\w\s]{0,3}ㅁ",
     r"ㄴ[^\w\s]{0,3}ㅇ[^\w\s]{0,3}ㅁ",
-    r"(시|씨|싔|ㅅㅣ)[^\w\s]{0,3}(발|팔|바|빨|불)",
+    # [수정] '시/씨' 뒤에 글자가 늘어나거나('이', '발' 등) 반복되어도 다 잡히도록 수정
+    r"(시|씨|싔|ㅅㅣ)[^\w\s]{0,5}(이)?[^\w\s]{0,5}(발|팔|바|빨|불)",
     r"(개)[^\w\s]{0,3}(새|색|샊)[^\w\s]{0,3}(끼|기|키)",
     r"(병|뼝)[^\w\s]{0,3}(신|씬)",
     r"(지)[^\w\s]{0,3}(랄|럴)",
@@ -69,13 +70,13 @@ COMPILED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in RAW_PATTERNS]
 BAD_WORDS = [
     # 욕설
     "씨발", "시발", "개새끼", "병신", "좆", "지랄", "존나", "닥쳐", "애미", "애비", "느금마",
-    "ㅅㅂ", "ㅂㅅ", "ㅈ까", "씨바", "븅신", "썅", "시불", "느금", "엠창", "떵개", "꺼져", "ㅆㅂ", "ㄴㄱㅁ", "ㄱㅅㄲ", "ㅈㄹ",
+    "ㅅㅂ", "ㅂㅅ", "ㅈ까", "씨바", "븅신", "썅", "시불", "느금", "엠창", "떵개", "꺼져", "ㅆㅂ", "ㄴㄱㅁ", "ㄱㅅㄲ", "ㅈㄹ", "시이불",
     
     # 성적 표현
     "섹스", "자지", "보지", "야동", "야짤", "조건만남", "몸캠", "자위", "정액", "강간",
     "쎅스", "섺스", "야동",
     
-    # 혐오 표현 (장애 관련 표현 추가)
+    # 혐오 표현 (장애 관련 표현 포함)
     "한남충", "메갈", "틀딱", "맘충", "급식충", "짱깨", "쪽발이", "애자",
     "장애", "장애자", "장애인", "장애우", "병신",
     
@@ -87,16 +88,13 @@ def is_bad_word(text: str) -> bool:
     if not text:
         return False
     
-    # 1. 특수문자, 공백, 숫자 등을 모두 제거하여 텍스트 압축
     clean_text = re.sub(r"[^\w]", "", text).lower()
 
-    # 2. 지정된 단어 목록(BAD_WORDS) 검사
     for bad in BAD_WORDS:
         clean_bad = re.sub(r"[^\w]", "", bad).lower()
         if clean_bad and clean_bad in clean_text:
             return True
 
-    # 3. 정규식 패턴 검사
     for pattern in COMPILED_PATTERNS:
         if pattern.search(clean_text) or pattern.search(text):
             return True
@@ -107,9 +105,6 @@ def is_bad_word(text: str) -> bool:
 async def on_ready():
     print(f"로그인 성공: {bot.user.name}")
 
-# ---------------------------------------------------------
-# [닉네임 검열 공통 처리 함수]
-# ---------------------------------------------------------
 async def check_and_clean_nickname(member: discord.Member):
     if member.bot or member == member.guild.owner:
         return
@@ -133,24 +128,15 @@ async def check_and_clean_nickname(member: discord.Member):
         except discord.Forbidden:
             print(f"❌ {member.display_name}님의 닉네임을 변경할 권한이 없습니다. (봇 역할 순위 확인 필요)")
 
-# ---------------------------------------------------------
-# [이벤트: 신규 유저 입장 시 닉네임 검열]
-# ---------------------------------------------------------
 @bot.event
 async def on_member_join(member: discord.Member):
     await check_and_clean_nickname(member)
 
-# ---------------------------------------------------------
-# [이벤트: 기존 유저 닉네임/프로필 변경 시 검열]
-# ---------------------------------------------------------
 @bot.event
 async def on_member_update(before: discord.Member, after: discord.Member):
     if before.nick != after.nick or before.name != after.name:
         await check_and_clean_nickname(after)
 
-# ---------------------------------------------------------
-# [비속어 감지 및 자동 삭제 (채팅)]
-# ---------------------------------------------------------
 @bot.event
 async def on_message(message):
     if message.author.bot:
@@ -164,9 +150,6 @@ async def on_message(message):
         return
     await bot.process_commands(message)
 
-# ---------------------------------------------------------
-# [/구간청소 - 시작/끝 메시지 지정 삭제 (점장 / 부점장 전용)]
-# ---------------------------------------------------------
 @bot.tree.command(name="구간청소", description="시작 메시지와 끝 메시지를 지정하여 특정 구간을 삭제합니다.")
 @app_commands.describe(
     시작_메시지_링크="삭제할 시작(오래된) 메시지의 링크를 입력해 주세요.",
@@ -215,7 +198,7 @@ async def purge_range(interaction: discord.Interaction, 시작_메시지_링크:
             pass
 
         total_deleted = len(deleted) + 2
-        await interaction.followup.send(f"🧹 지정한 특정 구간에서 총 **{total_deleted}개**의 메시지를 지웠습니다!", ephemeral=True)
+        await interaction.followup.send(f"🧹 지정한 특정 구간에서 총 **{total_deleted}개**의 메시지오 지웠습니다!", ephemeral=True)
 
     except discord.HTTPException as e:
         if getattr(e, 'code', None) == 50034 or "14 days" in str(e):
