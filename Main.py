@@ -37,7 +37,7 @@ class MyBot(commands.Bot):
 bot = MyBot()
 
 # ---------------------------------------------------------
-# [통합 차단 단어 목록 (@이도, 이도 제거됨)]
+# [통합 차단 단어 목록]
 # ---------------------------------------------------------
 BAD_WORDS = [
     # 욕설 및 변형 표현
@@ -71,15 +71,15 @@ def is_bad_word(text: str) -> bool:
         if not clean_bad:
             continue
             
-        if clean_bad in clean_text:
-            return True
-            
-        if bad_lower in text_lower:
+        # 1. 단순 포함 여부 확인
+        if clean_bad in clean_text or bad_lower in text_lower:
             return True
 
+        # 2. 글자 사이에 특수문자, 공백, 자음/모음이 섞여 뻥튀기된 경우를 완벽히 잡는 정규식
+        # (예: "지이랄", "지@_랄" 등 글자 사이 간격을 더 넉넉히 허용)
         pattern_str = ""
         for char in clean_bad:
-            pattern_str += re.escape(char) + r"[^\w\s@]{0,3}"
+            pattern_str += re.escape(char) + r"[^\w\s@]{0,5}"
         
         try:
             if re.search(pattern_str, clean_text, re.IGNORECASE):
