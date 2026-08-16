@@ -37,61 +37,23 @@ class MyBot(commands.Bot):
 bot = MyBot()
 
 # ---------------------------------------------------------
-# [정밀 패드립 & 비속어 정규식 패턴 (전체 확장형)]
-# ---------------------------------------------------------
-PARENT_WORDS = r"(니|네|느|너희|너네|애)[^\w\s]{0,3}(엄마|어머니|아빠|아버지|애미|애비|금마|엠|금)"
-PARENT_DIRECT = r"(엄마|어머니|아빠|아버지|애미|애비)"
-MOCK_WORDS = r"(뒤진|없|창녀|창놈|레전드|클라스|안계시|뒈진|보지|자지|병신|디진|터짐|터진|갈림|뒈진)"
-
-RAW_PATTERNS = [
-    r"느[^\w\s]{0,3}금",
-    PARENT_WORDS,
-    rf"{PARENT_DIRECT}[^\w\s]{{0,5}}{MOCK_WORDS}",
-    rf"{MOCK_WORDS}[^\w\s]{{0,5}}{PARENT_DIRECT}",
-    r"ㄴ[^\w\s]{0,3}ㄱ[^\w\s]{0,3}ㅁ",
-    r"ㄴ[^\w\s]{0,3}ㅇ[^\w\s]{0,3}ㅁ",
-    
-    # [확장] 시/씨 계열 (사이에 글자나 특수문자가 껴도 다 잡힘)
-    r"(시|씨|싔|ㅅㅣ)[^\w\s]{0,5}(이)?[^\w\s]{0,5}(발|팔|바|빨|불)",
-    
-    # [확장] 개새끼 계열
-    r"(개)[^\w\s]{0,5}(새|색|샊)[^\w\s]{0,5}(끼|기|키)",
-    
-    # [확장] 병신 계열
-    r"(병|뼝)[^\w\s]{0,5}(신|씬)",
-    
-    # [확장] 지랄 계열
-    r"(지)[^\w\s]{0,5}(랄|럴)",
-    
-    # [확장] 존나 계열
-    r"(존)[^\w\s]{0,5}(나|낙|내)",
-    
-    # [확장] 초성/자음 반복 계열 (ㅅㅂ, ㅂㅅ, ㄱㅅㄲ, ㅈㄹ 등)
-    r"(ㅅ|ㅆ)[^\w\s]{0,5}(ㅂ|ㅃ)",
-    r"ㅂ[^\w\s]{0,5}ㅅ",
-    r"ㄱ[^\w\s]{0,5}ㅅ[^\w\s]{0,5}ㄲ",
-    r"ㅈ[^\w\s]{0,5}ㄹ"
-]
-
-COMPILED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in RAW_PATTERNS]
-
-# ---------------------------------------------------------
-# [차단 단어 목록]
+# [통합 차단 단어 목록 (@이도, 이도 제거됨)]
 # ---------------------------------------------------------
 BAD_WORDS = [
-    # 욕설
+    # 욕설 및 변형 표현
     "씨발", "시발", "개새끼", "병신", "좆", "지랄", "존나", "닥쳐", "애미", "애비", "느금마",
-    "ㅅㅂ", "ㅂㅅ", "ㅈ까", "씨바", "븅신", "썅", "시불", "느금", "엠창", "떵개", "꺼져", "ㅆㅂ", "ㄴㄱㅁ", "ㄱㅅㄲ", "ㅈㄹ", "시이불",
+    "ㅅㅂ", "ㅂㅅ", "ㅈ까", "씨바", "븅신", "썅", "시불", "느금", "엠창", "떵개", "꺼져", "ㅆㅂ", "ㄴㄱㅁ", "ㄱㅅㄲ", "ㅈㄹ",
+    "시이불", "지이랄", "니엄마", "느엄마", "니애미", "느애미",
     
     # 성적 표현
     "섹스", "자지", "보지", "야동", "야짤", "조건만남", "몸캠", "자위", "정액", "강간",
-    "쎅س", "섺스", "야동",
+    "쎅스", "섺스",
     
     # 혐오 표현 (장애 관련 표현 포함)
     "한남충", "메갈", "틀딱", "맘충", "급식충", "짱깨", "쪽발이", "애자",
-    "장애", "장애자", "장애인", "장애우", "병신",
+    "장애", "장애자", "장애인", "장애우",
     
-    # 영문
+    # 영문 욕설 및 은어
     "fuck", "shit", "bitch", "asshole", "dick", "pussy", "cunt", "nigger", "porn"
 ]
 
@@ -99,16 +61,31 @@ def is_bad_word(text: str) -> bool:
     if not text:
         return False
     
-    clean_text = re.sub(r"[^\w]", "", text).lower()
+    text_lower = text.lower()
+    clean_text = re.sub(r"[^\w@]", "", text_lower)
 
     for bad in BAD_WORDS:
-        clean_bad = re.sub(r"[^\w]", "", bad).lower()
-        if clean_bad and clean_bad in clean_text:
+        bad_lower = bad.lower()
+        clean_bad = re.sub(r"[^\w@]", "", bad_lower)
+        
+        if not clean_bad:
+            continue
+            
+        if clean_bad in clean_text:
+            return True
+            
+        if bad_lower in text_lower:
             return True
 
-    for pattern in COMPILED_PATTERNS:
-        if pattern.search(clean_text) or pattern.search(text):
-            return True
+        pattern_str = ""
+        for char in clean_bad:
+            pattern_str += re.escape(char) + r"[^\w\s@]{0,3}"
+        
+        try:
+            if re.search(pattern_str, clean_text, re.IGNORECASE):
+                return True
+        except re.error:
+            pass
 
     return False
 
