@@ -45,8 +45,8 @@ BAD_WORDS = [
     "ㅅㅂ", "ㅂㅅ", "ㅈ까", "씨바", "븅신", "썅", "시불", "느금", "엠창", "떵개", "꺼져", "ㅆㅂ", "ㄴㄱㅁ", "ㄱㅅㄲ", "ㅈㄹ",
     "시이불", "지이랄", "니엄마", "느엄마", "니애미", "느애미",
     
-    # 성적 표현
-    "섹스", "자지", "보지", "야동", "야짤", "조건만남", "몸캠", "자위", "정액", "강간",
+    # 성적 표현 (영문 포함)
+    "sex", "섹스", "자지", "보지", "야동", "야짤", "조건만남", "몸캠", "자위", "정액", "강간",
     "쎅스", "섺스",
     
     # 혐오 표현 (장애 관련 표현 포함)
@@ -61,22 +61,23 @@ def is_bad_word(text: str) -> bool:
     if not text:
         return False
     
+    # [수정] 입력받은 텍스트를 무조건 소문자로 변환하여 대소문자 차이를 없앰
     text_lower = text.lower()
     clean_text = re.sub(r"[^\w@]", "", text_lower)
 
     for bad in BAD_WORDS:
+        # [수정] 금지 단어도 무조건 소문자로 변환
         bad_lower = bad.lower()
         clean_bad = re.sub(r"[^\w@]", "", bad_lower)
         
         if not clean_bad:
             continue
             
-        # 1. 단순 포함 여부 확인
+        # 1. 단순 포함 여부 확인 (대소문자 무시)
         if clean_bad in clean_text or bad_lower in text_lower:
             return True
 
-        # 2. 글자 사이에 특수문자, 공백, 자음/모음이 섞여 뻥튀기된 경우를 완벽히 잡는 정규식
-        # (예: "지이랄", "지@_랄" 등 글자 사이 간격을 더 넉넉히 허용)
+        # 2. 글자 사이에 특수문자, 공백이 섞인 우회 표현 감지
         pattern_str = ""
         for char in clean_bad:
             pattern_str += re.escape(char) + r"[^\w\s@]{0,5}"
