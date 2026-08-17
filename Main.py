@@ -117,12 +117,7 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # 관리자는 검열 및 도배 감지에서 제외
-    if message.author.guild_permissions.administrator:
-        await bot.process_commands(message)
-        return
-
-    # 1. 비속어 검열 처리 (경고 메시지 출력 후 3초 뒤 자동 삭제)
+    # 1. 비속어 검열 처리 (서버 주인/관리자 포함 무조건 검열)
     if is_bad_word(message.content):
         try:
             await message.delete()
@@ -140,7 +135,7 @@ async def on_message(message):
             pass
         return
 
-    # 2. 도배 및 스팸 감지 (도배 경고 메시지 출력 후 5초 뒤 자동 삭제)
+    # 2. 도배 및 스팸 감지
     author_id = message.author.id
     current_time = time.time()
 
@@ -167,7 +162,10 @@ async def on_message(message):
         if is_regular_macro or is_fast_spam or all_same_content:
             try:
                 from datetime import timedelta
-                await message.author.timeout(timedelta(minutes=5), reason="도배 및 스팸 행위 자동 감지")
+                # 디스코드 정책상 서버 주인은 타임아웃 불가하므로 오류 방지 처리
+                if message.author != message.guild.owner:
+                    await message.author.timeout(timedelta(minutes=5), reason="도배 및 스팸 행위 자동 감지")
+                
                 user_spam_records[author_id] = {"timestamps": [], "messages": []}
 
                 spam_msg = await message.channel.send(
@@ -186,7 +184,7 @@ async def on_message(message):
                     pass
                 return
             except Exception as e:
-                print(f"타임아웃 실행 중 오류 발생: {e}")
+                print(f"도배 처리 중 오류 발생: {e}")
 
     await bot.process_commands(message)
 
