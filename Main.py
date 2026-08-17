@@ -132,6 +132,7 @@ async def on_message(message):
         await message.channel.send(
             f"⚠️ {message.author.mention}님, 부적절한 언행(초성, 성적/혐오/비하 표현, 영문 욕설 등)은 제한됩니다!"
         )
+        await warning_msg.delete(delay=3)
         return
 
     # 2. 도배 및 스팸 감지 (매크로 일정 간격 + 불규칙 의도적 도배 동시 차단)
