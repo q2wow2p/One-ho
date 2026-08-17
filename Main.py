@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import asyncio
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -99,16 +100,6 @@ async def check_and_clean_nickname(member: discord.Member):
         try:
             new_nick = "부적절한닉네임_리셋"
             await member.edit(nick=new_nick, reason="부적절한 닉네임 자동 감지 및 변경")
-            
-            try:
-                await member.send(
-                    f"⚠️ **{member.guild.name}** 서버 안내\n"
-                    f"사용하신 닉네임(`{name_to_check}`)에 부적절한 단어(혐오/비하 표현 등)가 포함되어 있어 **`{new_nick}`**(으)로 강제 변경되었습니다.\n"
-                    f"서버 규정에 맞는 닉네임으로 수정해 주세요!"
-                )
-            except discord.Forbidden:
-                pass
-
         except discord.Forbidden:
             print(f"❌ {member.display_name}님의 닉네임을 변경할 권한이 없습니다.")
 
@@ -126,16 +117,20 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # 1. 비속어 검열 처리
-    if is_bad_word(message.content):
-        await message.delete()
-        await message.channel.send(
-            f"⚠️ {message.author.mention}님, 부적절한 언행(초성, 성적/혐오/비하 표현, 영문 욕설 등)은 제한됩니다!"
-        )
-        await warning_msg.delete(delay=3)
+    # 관리자는 검열 및 도배 감지에서 제외
+    if message.author.guild_permissions.administrator:
+        await bot.process_commands(message)
         return
 
-    # 2. 도배 및 스팸 감지 (매크로 일정 간격 + 불규칙 의도적 도배 동시 차단)
+    # 1. 비속어 검열 처리 (알림 없이 조용히 삭제)
+    if is_bad_word(message.content):
+        try:
+            await message.delete()
+        except discord.NotFound:
+            pass
+        return
+
+    # 2. 도배 및 스팸 감지 (알림 없이 타임아웃 및 메시지 삭제만 실행)
     author_id = message.author.id
     current_time = time.time()
 
@@ -146,44 +141,32 @@ async def on_message(message):
     record["timestamps"].append(current_time)
     record["messages"].append(message.content)
 
-    # 최근 10개의 기록만 유지
     if len(record["timestamps"]) > 10:
         record["timestamps"].pop(0)
         record["messages"].pop(0)
 
-    # 기록이 10개 쌓였을 때 검사
     if len(record["timestamps"]) == 10:
         intervals = [record["timestamps"][i] - record["timestamps"][i-1] for i in range(1, 10)]
         base_interval = intervals[0]
         
-        # [조건 1] 메트로놈처럼 일정한 간격으로 10번 보낸 경우 (매크로 도배)
-        is_regular_macro = all(abs(interval - base_interval) <= 0.6 for interval in intervals) and (0.5 <= base_interval <= 30.0)
-        
-        # [조건 2] 간격이 불규칙하더라도, 최근 10개의 메시지가 총 15초 이내라는 짧은 시간 동안 난사된 경우 (의도적 도배)
+        is_regular_macro = all(abs(interval - base_interval) <= 0.6 for interval in intervals) and (0.5 <= base_interval <= 300.0)
         total_duration = record["timestamps"][-1] - record["timestamps"][0]
         is_fast_spam = total_duration <= 15.0 
-
-        # [조건 3] 10개가 전부 똑같은 내용인 경우
         all_same_content = all(msg == record["messages"][0] for msg in record["messages"])
 
         if is_regular_macro or is_fast_spam or all_same_content:
             try:
                 from datetime import timedelta
                 await message.author.timeout(timedelta(minutes=5), reason="도배 및 스팸 행위 자동 감지")
-                
-                # 기록 초기화
                 user_spam_records[author_id] = {"timestamps": [], "messages": []}
-                
-                await message.channel.send(
-                    f"🚫 {message.author.mention}님, 의도적인 도배 또는 매크로 행위가 감지되어 **5분간 타임아웃**되었습니다."
-                )
+
                 try:
                     await message.delete()
                 except discord.NotFound:
                     pass
                 return
-            except discord.Forbidden:
-                print(f"❌ {message.author.display_name}님을 타임아웃시킬 권한이 없습니다.")
+            except Exception as e:
+                print(f"타임아웃 실행 중 오류 발생: {e}")
 
     await bot.process_commands(message)
 
