@@ -1,6 +1,8 @@
 import os
 import re
 import time
+import json
+import random
 import asyncio
 import discord
 from discord import app_commands
@@ -39,6 +41,28 @@ class MyBot(commands.Bot):
 bot = MyBot()
 
 # ---------------------------------------------------------
+# [레벨링 시스템 데이터 관리]
+# ---------------------------------------------------------
+LEVEL_FILE = "levels.json"
+user_xp_cooldown = {} # XP 획득 쿨타임 (1분)
+
+def load_level_data():
+    if os.path.exists(LEVEL_FILE):
+        try:
+            with open(LEVEL_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_level_data(data):
+    try:
+        with open(LEVEL_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f"데이터 저장 오류: {e}")
+
+# ---------------------------------------------------------
 # [통합 차단 단어 목록]
 # ---------------------------------------------------------
 BAD_WORDS = [
@@ -55,26 +79,20 @@ BAD_WORDS = [
 def is_bad_word(text: str) -> bool:
     if not text:
         return False
-    
+
     text_lower = text.lower()
-    clean_text = re.sub(r"[^\w@]", "", text_lower)
 
     for bad in BAD_WORDS:
         bad_lower = bad.lower()
-        clean_bad = re.sub(r"[^\w@]", "", bad_lower)
-        
-        if not clean_bad:
+        if not bad_lower:
             continue
-            
-        if clean_bad in clean_text or bad_lower in text_lower:
-            return True
 
-        pattern_str = ""
-        for char in clean_bad:
-            pattern_str += re.escape(char) + r"[^\w\s@]{0,5}"
-        
+        # 1. 단어 글자 사이에 모든 문자(숫자, 특수문자, 공백 등) 0~5개가 들어가는 패턴 생성
+        # 예: "씨발" -> '씨' + (아무 문자 0~5개) + '발'
+        pattern_str = r".{0,5}".join(re.escape(char) for char in bad_lower)
+
         try:
-            if re.search(pattern_str, clean_text, re.IGNORECASE):
+            if re.search(pattern_str, text_lower, re.IGNORECASE):
                 return True
         except re.error:
             pass
@@ -102,6 +120,8 @@ async def check_and_clean_nickname(member: discord.Member):
             await member.edit(nick=new_nick, reason="부적절한 닉네임 자동 감지 및 변경")
         except discord.Forbidden:
             print(f"❌ {member.display_name}님의 닉네임을 변경할 권한이 없습니다.")
+        except discord.HTTPException as e:
+            print(f"HTTP 오류 발생: {e}")
 
 @bot.event
 async def on_member_join(member: discord.Member):
@@ -117,23 +137,24 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # 1. 비속어 검열 처리 (서버 주인/관리자 포함 무조건 검열)
+    # 1. 비속어 검열 처리 (숫자/특수문자 포함 변형 표현 감지)
     if is_bad_word(message.content):
         try:
             await message.delete()
-        except discord.NotFound:
+        except discord.HTTPException:
             pass
 
-        warning_msg = await message.channel.send(
-            f"⚠️ {message.author.mention}님, 부적절한 언행(초성, 성적/혐오/비하 표현, 영문 욕설 등)은 제한됩니다!"
-        )
-        
-        await asyncio.sleep(3)
+        await asyncio.sleep(0.2)
+
         try:
+            warning_msg = await message.channel.send(
+                f"⚠️ {message.author.mention}님, 부적절한 언행(숫자/특수문자 변형 표현 포함)은 제한되며 **경험치가 지급되지 않습니다!**"
+            )
+            await asyncio.sleep(3)
             await warning_msg.delete()
-        except discord.NotFound:
+        except discord.HTTPException:
             pass
-        return
+        return  # ❌ 욕설 감지 시 XP 지급 절차 차단
 
     # 2. 도배 및 스팸 감지
     author_id = message.author.id
@@ -162,31 +183,88 @@ async def on_message(message):
         if is_regular_macro or is_fast_spam or all_same_content:
             try:
                 from datetime import timedelta
-                # 디스코드 정책상 서버 주인은 타임아웃 불가하므로 오류 방지 처리
                 if message.author != message.guild.owner:
                     await message.author.timeout(timedelta(minutes=5), reason="도배 및 스팸 행위 자동 감지")
                 
                 user_spam_records[author_id] = {"timestamps": [], "messages": []}
 
+                await asyncio.sleep(0.2)
                 spam_msg = await message.channel.send(
                     f"🚫 {message.author.mention}님, 도배 행위가 감지되어 **5분간 타임아웃**되었습니다."
                 )
 
                 try:
                     await message.delete()
-                except discord.NotFound:
+                except discord.HTTPException:
                     pass
 
                 await asyncio.sleep(5)
                 try:
                     await spam_msg.delete()
-                except discord.NotFound:
+                except discord.HTTPException:
                     pass
                 return
             except Exception as e:
                 print(f"도배 처리 중 오류 발생: {e}")
 
+    # 3. 레벨링 및 경험치(XP) 지급 처리
+    user_str_id = str(author_id)
+    last_xp_time = user_xp_cooldown.get(user_str_id, 0)
+
+    if current_time - last_xp_time > 60:
+        user_xp_cooldown[user_str_id] = current_time
+        level_data = load_level_data()
+
+        if user_str_id not in level_data:
+            level_data[user_str_id] = {"xp": 0, "level": 1}
+
+        gained_xp = random.randint(15, 25)
+        level_data[user_str_id]["xp"] += gained_xp
+
+        current_xp = level_data[user_str_id]["xp"]
+        current_lvl = level_data[user_str_id]["level"]
+        needed_xp = current_lvl * 100
+
+        if current_xp >= needed_xp:
+            level_data[user_str_id]["level"] += 1
+            level_data[user_str_id]["xp"] -= needed_xp
+            new_lvl = level_data[user_str_id]["level"]
+
+            try:
+                lvl_up_msg = await message.channel.send(
+                    f"🎉 {message.author.mention}님 축하합니다! **레벨 {new_lvl}**(으)로 레벨업 하셨습니다!"
+                )
+                await asyncio.sleep(5)
+                await lvl_up_msg.delete()
+            except discord.HTTPException:
+                pass
+
+        save_level_data(level_data)
+
     await bot.process_commands(message)
+
+# ---------------------------------------------------------
+# [/레벨 - 내 현재 레벨 및 XP 확인 슬래시 명령어]
+# ---------------------------------------------------------
+@bot.tree.command(name="레벨", description="나의 현재 레벨과 경험치를 확인합니다.")
+async def show_level(interaction: discord.Interaction):
+    level_data = load_level_data()
+    user_str_id = str(interaction.user.id)
+
+    if user_str_id not in level_data:
+        lvl = 1
+        xp = 0
+    else:
+        lvl = level_data[user_str_id]["level"]
+        xp = level_data[user_str_id]["xp"]
+
+    needed_xp = lvl * 100
+    await interaction.response.send_message(
+        f"📊 **{interaction.user.display_name}**님의 레벨 정보\n"
+        f"• **레벨**: Level {lvl}\n"
+        f"• **경험치**: {xp} / {needed_xp} XP",
+        ephemeral=True
+    )
 
 # ---------------------------------------------------------
 # [/구간청소 - 시작/끝 메시지 지정 삭제 (점장 / 부점장 전용)]
