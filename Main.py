@@ -8,6 +8,9 @@ from discord.ext import commands
 from flask import Flask
 from threading import Thread
 
+# ---------------------------------------------------------
+# [Flask 웹서버 설정]
+# ---------------------------------------------------------
 app = Flask('')
 
 @app.route('/')
@@ -19,11 +22,12 @@ def run():
     app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
-    t = Thread(target=run)
+    t = Thread(target=run, daemon=True)
     t.start()
 
-keep_alive()
-
+# ---------------------------------------------------------
+# [봇 설정]
+# ---------------------------------------------------------
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -63,7 +67,6 @@ def is_bad_word(text: str) -> bool:
         if not bad_lower:
             continue
 
-        # 글자 사이에 알파벳, 숫자, 특수문자, 공백 등이 들어간 변형 표현 감지
         pattern_str = r".{0,5}".join(re.escape(char) for char in bad_lower)
 
         try:
@@ -81,7 +84,8 @@ user_spam_records = {}
 
 @bot.event
 async def on_ready():
-    print(f"로그인 성공: {bot.user.name}")
+    print(f"✅ 로그인 성공: {bot.user.name} (ID: {bot.user.id})")
+    print("디스코드 봇이 정상적으로 온라인 상태가 되었습니다.")
 
 async def check_and_clean_nickname(member: discord.Member):
     if member.bot or member == member.guild.owner:
@@ -243,4 +247,13 @@ async def purge_range(interaction: discord.Interaction, 시작_메시지_링크:
         else:
             await interaction.followup.send(f"❌ 삭제 중 오류가 발생했습니다: {e}", ephemeral=True)
 
-bot.run(os.environ.get("BOT_TOKEN"))
+# ---------------------------------------------------------
+# [메인 실행부]
+# ---------------------------------------------------------
+if __name__ == "__main__":
+    token = os.environ.get("BOT_TOKEN")
+    if not token:
+        print("❌ 오류: BOT_TOKEN 환경 변수가 설정되어 있지 않습니다!")
+    else:
+        keep_alive()  # 백그라운드로 웹서버 실행
+        bot.run(token)  # 디스코드 봇 로그인
